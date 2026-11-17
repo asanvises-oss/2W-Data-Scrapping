@@ -18,47 +18,55 @@ permissions:
 jobs:
   scrape-and-clean:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Run Google Maps Scraper (gosom)
+        timeout-minutes: 150
+        continue-on-error: true
         run: |
           docker run --rm \
             -v "$PWD:/data" \
             gosom/google-maps-scraper:latest \
             -input /data/queries.txt \
             -results /data/raw_results.csv \
-            -c 2 \
-            -depth 10 \
+            -c 6 \
+            -depth 6 \
             -lang th \
-            -exit-on-inactivity 3m
+            -exit-on-inactivity 2m
 
       - name: Set up Python
+        if: always()
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install Python dependencies
+        if: always()
         run: |
           pip install -r requirements.txt
 
       - name: Filter & Clean Motorcycle Tire Shops
+        if: always()
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          if [ "${{ github.event.inputs.use_vision }}" = "true" ]; then
-            python filter_shops.py --input raw_results.csv --output clean_motorcycle_tire_shops.csv --use-vision --max-vision ${{ github.event.inputs.max_vision_calls }}
-          else
-            python filter_shops.py --input raw_results.csv --output clean_motorcycle_tire_shops.csv
+          if [ -f "raw_results.csv" ]; then
+            if [ "${{ github.event.inputs.use_vision }}" = "true" ]; then
+              python filter_shops.py --input raw_results.csv --output clean_motorcycle_tire_shops.csv --use-vision --max-vision ${{ github.event.inputs.max_vision_calls }}
+            else
+              python filter_shops.py --input raw_results.csv --output clean_motorcycle_tire_shops.csv
+            fi
           fi
 
       - name: Commit and push results to GitHub
+        if: always()
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add raw_results.csv clean_motorcycle_tire_shops.csv
+          git add -f raw_results.csv clean_motorcycle_tire_shops.csv || true
           git commit -m "Update motorcycle tire shops dataset ($(date +'%Y-%m-%d'))" || echo "No changes to commit"
           git push
